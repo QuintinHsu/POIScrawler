@@ -98,7 +98,7 @@ DEFAULT_REQUEST_HEADERS = {
 #HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.FilesystemCacheStorage'
 
 # LOG_LEVEL = 'INFO'
-LOG_FILE = "./mySpider.log"
+# LOG_FILE = "./mySpider.log"
 
 MYSQL_HOST = '127.0.0.1'
 MYSQL_DBNAME = 'poi_db'

@@ -21,7 +21,7 @@ def test_insert_proxies(cnxpool):
     sql = ('INSERT INTO `proxies` (`proxy`, `status`, `ts`, `counter`, `web`) '
             'VALUES (%s, %s, %s, %s, %s)')
     cursor = cnx.cursor()
-    cursor.execute(sql, ('171.42.132.167:10000', '0', int(time.time()), 0, 'baidu_map'))
+    cursor.execute(sql, ('171.42.132.167:10000', '0', int(time.time()), 0, 'gaode_map'))
     cnx.commit()
 
     cursor.close()
@@ -31,9 +31,10 @@ def test_insert_cookies(cnxpool):
     cnx = cnxpool.get_connection()
     
     cursor = cnx.cursor()
-    sql = 'SELECT `id`, `proxy`, `web` FROM `proxies`'
+    sql = 'SELECT `id`, `proxy`, `web` FROM `proxies` WHERE web = \'gaode_map\''
     cursor.execute(sql)
     proxy = cursor.fetchone()
+    # cursor.close()
 
     sql = 'SELECT `id`, `ua` FROM `ua`'
     cursor.execute(sql)

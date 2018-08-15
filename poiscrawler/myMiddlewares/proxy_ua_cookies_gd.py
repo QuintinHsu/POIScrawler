@@ -5,9 +5,17 @@ import logging
 import urllib.parse
 
 from scrapy import signals
+from scrapy.http import Response
 from scrapy.http.cookies import CookieJar
 from scrapy.exceptions import CloseSpider
 import requests.utils
+
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.wait import WebDriverWait
 
 import mysql.connector.pooling
 
@@ -19,6 +27,14 @@ class RandomProxyUACookiesMiddleware(object):
         self.crawler = crawler
         self.cnxpool = cnxpool
         self.max_cookies_counter = max_cookies_counter
+
+        # self.timeout = 10
+        # self.browser = webdriver.Chrome()
+        # self.browser.set_window_size(1400, 700)
+        # self.browser.set_page_load_timeout(self.timeout)
+        # self.wait = WebDriverWait(self.browser, self.timeout)
+        # self.chrome_options = Options()
+        # self.chrome_options.add_argument('--headless')
 
     def __del__(self):
         del self.cnxpool
@@ -32,7 +48,7 @@ class RandomProxyUACookiesMiddleware(object):
         offset = random.randint(0, total_proxy - 1)
         status = '0'
 
-        sql = 'SELECT id, proxy FROM proxies WHERE status = \'%s\' LIMIT %s,1' % (status, offset)
+        sql = 'SELECT id, proxy FROM proxies WHERE status = \'%s\' AND web = \'gaode_map\' LIMIT %s,1' % (status, offset)
         cnx = self.cnxpool.get_connection()
         cursor = cnx.cursor()
         cursor.execute(sql)
@@ -104,7 +120,7 @@ class RandomProxyUACookiesMiddleware(object):
 
         # 将Cookies转换成json
         if cookies:
-            cookies_json = json.dumps(self._cookies_to_list(cookies))
+            cookies_json = json.dumps(cookies)
         else:
             cookies_json = ''
         sql = ("""UPDATE `cookies` SET `cookies` = %s, `counter` = %s, `status` = %s """
@@ -127,7 +143,7 @@ class RandomProxyUACookiesMiddleware(object):
 
         cnx = self.cnxpool.get_connection()
         cursor = cnx.cursor()
-        cursor.execute(sql, ('异常-data_security:%s' % status, int(time.time()), proxy_id, proxy_id))
+        cursor.execute(sql, ('异常-:%s' % status, int(time.time()), proxy_id, proxy_id))
         cnx.commit()
 
         cursor.close()
@@ -145,6 +161,7 @@ class RandomProxyUACookiesMiddleware(object):
         random_ua = self.get_random_ua()
         if random_ua:
             ua_id, ua = random_ua
+
         cookies_id, cookies, counter = self.get_cookies(proxy_id, ua_id)
         proxies = {'https': 'https://%s' % proxy, 'http': 'http://%s' % proxy}
 
@@ -157,7 +174,29 @@ class RandomProxyUACookiesMiddleware(object):
         if cookies:
             # 将string 类型的cookies转换成cookiejar
             request.cookies = json.loads(cookies)
+        else:
+            logger.debug('Chrome is starting')
+            chrome_options = Options()
+            # chrome_options.add_argument("--headless")
+            # 设置ua
+            chrome_options.add_argument('--user-agent=%s' % ua)
 
+            browser = webdriver.Chrome(chrome_options=chrome_options)
+            try:
+                browser.get('https://www.amap.com')
+                input = browser.find_element_by_id('searchipt')
+                input.send_keys('美食')
+                input.send_keys(Keys.ENTER)
+                wait = WebDriverWait(browser, 10)
+                wait.until(EC.presence_of_element_located((By.ID, 'maptoolbox')))                
+            except Exception as e:
+                logger.warn('Error in selenium')
+            else:
+                cookies = browser.get_cookies()
+                request.cookies = cookies
+            finally:
+                time.sleep(5)
+                browser.close()
         if cookies:
             jar = CookieJar()
             cookies = self._get_request_cookies(jar, request)
@@ -175,13 +214,15 @@ class RandomProxyUACookiesMiddleware(object):
         request.meta['proxy_id'] = proxy_id
         request.meta['ua'] = ua
         request.meta['cookies_counter'] = counter
-        request.meta['cookiejar'] = cookies_id
+        request.meta['cookies_id'] = cookies_id
+
+        # return request
 
     def process_response(self, request, response, spider):
         proxy_id = request.meta['proxy_id']
-        cookies_id = request.meta['cookiejar']        
+        cookies_id = request.meta['cookies_id']        
         cookies_counter = request.meta['cookies_counter']
-        
+
         # 获取Response中返回的cookies
         logger.debug('0 After response cookies: %s' % request.cookies)
 
@@ -199,29 +240,38 @@ class RandomProxyUACookiesMiddleware(object):
 
             # response_dict = {'data': 0}
 
-            data_security = response_dict['result']['data_security_filt_res']
-            logger.debug('data_security: %s' % data_security)
+            logger.debug('response: %s' % response_dict['status'])
 
-            if data_security > 0:
-                # 当data_security > 0时，说明百度对结果进行了筛选，不是完整的结果，
+            if response_dict['status'] == '110':
+                # 当response_dict['status'] 等于 101时，说明高德已经检测到抓取行为，
                 # 该代理可能已经被检测到，冻结该代理，并将当前请求重新加入任务队列
 
                 # 记录发生异常的请求信息                
                 self.update_cookies(cookies_id, cookies, cookies_counter, 
-                    query, data_security)
+                    query, response.text)
                 logger.debug('cookies_id: %s\t cookies:%s\t cookies_counter:%s' % 
                     (cookies_id, cookies, cookies_counter))
 
                 # 冻结代理
-                self.block_proxy(proxy_id, data_security)
+                self.block_proxy(proxy_id, response.text)
 
                 # 设置响应码为601，进行Retry
                 response.status = 601
                 return response
 
+            elif response_dict['status'] != '1':
+                # 记录发生异常的请求信息                
+                self.update_cookies(cookies_id, cookies, cookies_counter, 
+                    query, response.text)
+                logger.debug('cookies_id: %s\t cookies:%s\t cookies_counter:%s' % 
+                    (cookies_id, cookies, cookies_counter))
+                # 设置响应码为602，进行Retry
+                response.status = 602
+                return response
+
             else:
                 # 更新cookies信息
-                self.update_cookies(cookies_id, cookies, cookies_counter, query, data_security)
+                self.update_cookies(cookies_id, cookies, cookies_counter, query, response_dict['status'])
                 return response
 
         except Exception as e:
@@ -250,9 +300,6 @@ class RandomProxyUACookiesMiddleware(object):
             db = settings['MYSQL_DBNAME'],
             user = settings['MYSQL_USER'],
             passwd = settings['MYSQL_PASSWD'],
-            # charset = 'utf8',#编码要加上，否则可能出现中文乱码问题
-            # cursorclass = MySQLdb.cursors.DictCursor,
-            # use_unicode = False,
         )
 
         max_cookies_counter = settings['MAX_COOKIES_COUNTER']
@@ -261,19 +308,26 @@ class RandomProxyUACookiesMiddleware(object):
                                                       pool_size = 3, **dbconfig)
         return cls(crawler, cnxpool, max_cookies_counter)
 
-    def _cookies_to_list(self, cookies):
-        cookies_list = list()
-        for cookie in cookies:
-            cookie_dict = dict()
-            for name in ("version", "name", "value",
-                         "port", "port_specified",
-                         "domain", "domain_specified", "domain_initial_dot",
-                         "path", "path_specified",
-                         "secure", "expires", "discard", "comment", "comment_url",
-                         ):
-                attr = getattr(cookie, name, None)
-                if attr:
-                    cookie_dict[name] = attr
-            cookies_list.append(cookie_dict)
-        return cookies_list if len(cookies_list) > 0 else None
+    def _format_cookie(self, cookie):
+        # build cookie string
+        cookie_str = '%s=%s' % (cookie['name'], cookie['value'])
 
+        if cookie.get('path', None):
+            cookie_str += '; Path=%s' % cookie['path']
+        if cookie.get('domain', None):
+            cookie_str += '; Domain=%s' % cookie['domain']
+
+        return cookie_str
+
+    def _get_request_cookies(self, jar, request):
+        if isinstance(request.cookies, dict):
+            cookie_list = [{'name': k, 'value': v} for k, v in \
+                    six.iteritems(request.cookies)]
+        else:
+            cookie_list = request.cookies
+
+        cookies = [self._format_cookie(x) for x in cookie_list]
+        headers = {'Set-Cookie': cookies}
+        response = Response(request.url, headers=headers)
+
+        return jar.make_cookies(response, request)

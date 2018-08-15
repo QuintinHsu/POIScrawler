@@ -100,6 +100,7 @@ class BdpoiSpider(scrapy.Spider):
     def start_requests(self):        
         # 设置请求参数     
         url = self._construct_url('美食', '(12834000.0,4720000.0;13091000.0,5006000.0)', 0)
+        url = self._construct_url('美食', '(13039600.0,4948800.0;13091001.0,5006001.0)', 0)
         yield scrapy.Request(url=url, method='GET')
 
     def parse(self, response):
@@ -174,6 +175,7 @@ class BdpoiSpider(scrapy.Spider):
         """
         poi_item = PoiItem()
         if 'uid' in poi and poi['uid'] and poi['uid'] != 'null':
+            poi_item['tbl'] = 'bd_poi'
             poi_item['uid'] = poi['uid']
             poi_item['raw'] = json.dumps(poi)
             poi_item['ts'] = ts

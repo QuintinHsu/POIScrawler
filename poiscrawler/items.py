@@ -11,8 +11,7 @@ import scrapy
 # class PoiscrawlerItem(scrapy.Item):
 class PoiItem(scrapy.Item):
     # define the fields for your item here like:
-    # name = scrapy.Field()
+    tbl = scrapy.Field()
     uid = scrapy.Field()
     raw = scrapy.Field()
     ts = scrapy.Field()
-    # status = scrapy.Field()
