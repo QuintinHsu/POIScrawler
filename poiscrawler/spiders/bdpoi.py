@@ -98,10 +98,15 @@ class BdpoiSpider(scrapy.Spider):
     }
 
     def start_requests(self):        
-        # 设置请求参数     
-        url = self._construct_url('美食', '(12834000.0,4720000.0;13091000.0,5006000.0)', 0)
-        url = self._construct_url('美食', '(13039600.0,4948800.0;13091001.0,5006001.0)', 0)
-        yield scrapy.Request(url=url, method='GET')
+        # 设置请求参数
+        keys = list()
+        with open('./data/baidu_keywords') as f:
+            key = f.readline().replace('\n', '')
+            if key:
+                keys.append(key)
+        for key in keys:
+            url = self._construct_url(key, '(12575076.8056,2564378.2789;12697994.1393,2728618.8495)', 0)
+            yield scrapy.Request(url=url, method='GET')
 
     def parse(self, response):
 

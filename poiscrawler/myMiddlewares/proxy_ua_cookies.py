@@ -28,7 +28,7 @@ class RandomProxyUACookiesMiddleware(object):
         从数据库中获取proxy
         :return: proxy_id, proxy
         """
-        total_proxy = 1
+        total_proxy = 1000
         offset = random.randint(0, total_proxy - 1)
         status = '0'
 

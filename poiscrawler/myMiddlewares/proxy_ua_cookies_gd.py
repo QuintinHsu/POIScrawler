@@ -197,6 +197,7 @@ class RandomProxyUACookiesMiddleware(object):
             finally:
                 time.sleep(5)
                 browser.close()
+                
         if cookies:
             jar = CookieJar()
             cookies = self._get_request_cookies(jar, request)
