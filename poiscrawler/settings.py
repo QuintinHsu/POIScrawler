@@ -97,6 +97,9 @@ DEFAULT_REQUEST_HEADERS = {
 #HTTPCACHE_IGNORE_HTTP_CODES = []
 #HTTPCACHE_STORAGE = 'scrapy.extensions.httpcache.FilesystemCacheStorage'
 
+COOKIES_ENABLED = True
+COOKIES_DEBUG = True
+
 # LOG_LEVEL = 'INFO'
 # LOG_FILE = "./mySpider.log"
 
@@ -107,6 +110,9 @@ MYSQL_PASSWD = '12345678'
 
 MYSQL_RECONNECT_WAIT = 3
 
+LOG_FORMAT = '%(asctime)s [%(name)s] %(lineno)s %(levelname)s: %(message)s'
 
 # cookies最大使用次数
 MAX_COOKIES_COUNTER = 30
+
+PROXY_URL = 'http://127.0.0.1:12345/proxy8_get'

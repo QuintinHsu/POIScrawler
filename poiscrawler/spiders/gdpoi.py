@@ -23,18 +23,19 @@ class GdpoiSpider(scrapy.Spider):
         },
 
         'DOWNLOADER_MIDDLEWARES': {
-            'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
-            'scrapy.downloadermiddlewares.cookies.CookiesMiddleware': None,
-            'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': None,
-            'poiscrawler.myMiddlewares.proxy_ua_cookies_gd.RandomProxyUACookiesMiddleware': 543
+            # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
+            # 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware': None,
+            # 'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': None,
+            'poiscrawler.myMiddlewares.proxy_ua_cookies.RandomProxyUACookiesMiddleware': 443,
+            'poiscrawler.myMiddlewares.validate_response.ValidateGDResponseMiddleware': 553
         },
 
         'ITEM_PIPELINES': {
            'poiscrawler.pipelines.InsertManyItemPipeline': 300
         },
 
-        # 'COOKIES_ENABLED': True,
-        # 'COOKIES_DEBUG': True,
+        'COOKIES_ENABLED': True,
+        #'COOKIES_DEBUG': True,
 
         'DOWNLOAD_DELAY': 10,
         'CONCURRENT_REQUESTS': 1,
@@ -42,17 +43,24 @@ class GdpoiSpider(scrapy.Spider):
 
         # Retry
         'RETRY_ENABLED': True,
-        'RETRY_TIMES': 10,
+        'RETRY_TIMES': 1,
         'RETRY_HTTP_CODES': [400, 404, 502, 504, 601, 602],
 
         # MySQL
-        'MYSQL_ITEM_LIST_LIMIT': 5,
+        'MYSQL_ITEM_LIST_LIMIT': 50,
 
         'SUBBINS': 5,
         'SUBBIN_PADDING': 1,
 
         # PAGE_POI_NUM
-        'PAGE_POI_NUM': 200
+        'PAGE_POI_NUM': 200,
+
+        #'LOG_LEVEL': 'INFO',
+        #'LOG_FILE': './gdpoi.log',
+
+        'PROXIES': [],
+
+        'WEB': 'gaode_map'
     }
 
     params = {
@@ -77,10 +85,22 @@ class GdpoiSpider(scrapy.Spider):
     def start_requests(self):        
         # 设置请求参数     
         # url = self._construct_url('美食', '115.281974|39.172454|117.590798|41.142945', 110000, 0)
-        url = self._construct_url('美食', '116.3690332|40.5606504|116.390898|40.7548486', 110000, 0)
-        yield scrapy.Request(url=url, method='GET')
+        # url = self._construct_url('美食', '116.3690332|40.5606504|116.390898|40.7548486', 110000, 0)
+        # yield scrapy.Request(url=url, method='GET')
+        keys = list()
+        with open('./poiscrawler/data/baidu_keywords', 'r', encoding='utf8') as f:
+            lines = f.readlines()
+            for l in lines:
+                key = l.replace('\n', '')
+                if key:
+                    keys.append(key)
+        for key in keys:
+            url = self._construct_url(key, '120.8430290|30.4360185|122.0540010|31.8981599', 310000, 0)
+            yield scrapy.Request(url=url, method='GET')
+        
 
     def parse(self, response):
+
         response_dict = json.loads(response.text)
         ts = int(time.time())
 

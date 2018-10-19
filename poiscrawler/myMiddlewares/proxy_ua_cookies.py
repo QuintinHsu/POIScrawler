@@ -14,14 +14,39 @@ import mysql.connector.pooling
 logger = logging.getLogger(__name__)
 
 class RandomProxyUACookiesMiddleware(object):
-    """docstring for RandomProxyUACookiesMiddleware"""
-    def __init__(self, crawler, cnxpool, max_cookies_counter):
+    """设置cookies ua proxy"""
+    def __init__(self, crawler, cnxpool, max_cookies_counter, proxy_url, proxies, web):
         self.crawler = crawler
         self.cnxpool = cnxpool
         self.max_cookies_counter = max_cookies_counter
+        self.proxy_url = proxy_url
+        self.proxies = proxies
+        self.web = web
 
     def __del__(self):
         del self.cnxpool
+
+    def get_random_proxy_from_web(self, schema='https'):
+        """
+        从代理池中获取ua
+        :params schema: https or http
+        :params proxy_url: 代理池地址
+        :return: id, proxy
+        """
+        proxy = None
+        url = self.proxy_url
+        try:
+            proxy = 'https://113.128.148.119:8118'
+            # response = requests.get(url=url)
+            # if response and response.status_code == 200:
+            #     re = json.loads(response.text)
+            #     if 'error' in re and re['error'] == 0:
+            #         proxy = '%s://%s:%s' % (schema, re['data']['host'], re['data']['port'])
+
+        except Exception as e:
+            proxy = None
+
+        return proxy
 
     def get_random_proxy(self):
         """
@@ -32,7 +57,7 @@ class RandomProxyUACookiesMiddleware(object):
         offset = random.randint(0, total_proxy - 1)
         status = '0'
 
-        sql = 'SELECT id, proxy FROM proxies WHERE status = \'%s\' LIMIT %s,1' % (status, offset)
+        sql = 'SELECT id, proxy FROM proxies WHERE status = \'%s\' AND web = \'%s\' LIMIT %s,1' % (status, self.web, offset)
         cnx = self.cnxpool.get_connection()
         cursor = cnx.cursor()
         cursor.execute(sql)
@@ -90,147 +115,75 @@ class RandomProxyUACookiesMiddleware(object):
         logger.debug('Random cookies id: %s\tcookies: %s\tcounter: %s' % cookies)
         return cookies
 
-    def update_cookies(self, cookies_id, cookies, cookies_counter, info, status=None):
+    def get_cookies_web(self, ua_id):
         """
-        更新数据库中的cookies信息
-        :params cookies_id: cookies_id
-        :params cookies: cookies
-        :params cookies_counter: proxy-ua的使用次数
-        :params info: 相关信息（url中的query信息）
-        :params status: cookies状态（0: 正常，otherwise: 异常）
+        从数据库中获取ua所对应的cookies
+        :params ua_id: ua_id
+        :return: (cookies_id, cookies, cookies_counter)
         """
-        cnx = self.cnxpool.get_connection()
-        # cookies = None
 
-        # 将Cookies转换成json
-        if cookies:
-            cookies_json = json.dumps(self._cookies_to_list(cookies))
-        else:
-            cookies_json = ''
-        sql = ("""UPDATE `cookies` SET `cookies` = %s, `counter` = %s, `status` = %s """
-                """, `info` = %s, `ts` = %s WHERE `id` = %s""")
+        sql = 'SELECT id, cookies, counter FROM cookies WHERE ua_id = %s AND web = %s LIMIT 1'
+
+        cnx = self.cnxpool.get_connection()
         cursor = cnx.cursor()
-        cursor.execute(sql, (cookies_json, cookies_counter, status, info, int(time.time()), cookies_id))
-        cnx.commit()
+        cursor.execute(sql, (ua_id, self.web))
+        cookies = cursor.fetchone()
 
         cursor.close()
         cnx.close()
 
-    def block_proxy(self, proxy_id, status):
-        """
-        冻结代理
-        :params proxy_id: proxy_id
-        :params status: 状态信息
-        """
-        sql = ('UPDATE proxies SET status = %s, ts = %s, counter = '
-                '(SELECT SUM(c.`counter`) FROM `cookies` as c WHERE c.`proxy_id` = %s) WHERE id = %s')
-
-        cnx = self.cnxpool.get_connection()
-        cursor = cnx.cursor()
-        cursor.execute(sql, ('异常-data_security:%s' % status, int(time.time()), proxy_id, proxy_id))
-        cnx.commit()
-
-        cursor.close()
-        cnx.close()
+        logger.info('Random cookies id: %s\tcookies: %s\tcounter: %s' % cookies)
+        return cookies
 
     def process_request(self, request, spider):
-        random_proxy = self.get_random_proxy()
+        schema = 'https'
 
-        if random_proxy:
-            proxy_id, proxy = random_proxy            
+        if self.proxy_url:      # 使用proxy pool
+            proxy = self.get_random_proxy_from_web(schema)
+
+            while not proxy:
+                time.sleep(5)
+                proxy = self.get_random_proxy_from_web(schema)
+                
+                if proxy and proxy in self.proxies:     # proxy正在被使用，重新获取proxy
+                    proxy = None
+                else:                                   # 将proxy加入集合，防止其他爬虫同时使用该proxy
+                    self.proxies.append(proxy)
         else:
-            # self.crawler.engine.close_spider(spider, 'closespider_proxyusedup')  
-            raise CloseSpider('proxy used up')          
+            pass
 
-        random_ua = self.get_random_ua()
-        if random_ua:
-            ua_id, ua = random_ua
-        cookies_id, cookies, counter = self.get_cookies(proxy_id, ua_id)
-        proxies = {'https': 'https://%s' % proxy, 'http': 'http://%s' % proxy}
+        ua_id, ua = self.get_random_ua()
+        cookies_id, cookies, counter = self.get_cookies_web(ua_id)
 
-        # cookies使用次数过多时，更新cookies
-        if counter % self.max_cookies_counter == 0:
+        # 设置cookies
+        if cookies:
+            request.cookies = self._transform_cookies(cookies)
+        elif self.web == 'baidu_map':
+            request.cookies = {'MCITY': '-%s%%3A' % random.randint(100, 360)}
+
+        # cookies使用次数过多时，重新获取cookies
+        if counter // self.max_cookies_counter > 0:
             cookies = None
-            request.cookies = {}
-
-        # 如果cookies不为空，则将cookies添加至request中
-        if cookies:
-            # 将string 类型的cookies转换成cookiejar
-            request.cookies = json.loads(cookies)
-
-        if cookies:
-            jar = CookieJar()
-            cookies = self._get_request_cookies(jar, request)
-            for cookie in cookies:
-                jar.set_cookie_if_ok(cookie, request)
-
-            # set Cookie header
-            request.headers.pop('Cookie', None)
-            jar.add_cookie_header(request)
+            if self.web == 'baidu_map':
+                request.cookies = {'MCITY': '-%s%%3A' % random.randint(100, 360)}
 
         # 设置ua
-        request.headers.setdefault(b'User-Agent', ua)
+        request.headers['User-Agent'] = ua
 
-        request.meta['proxies'] = proxies
-        request.meta['proxy_id'] = proxy_id
-        request.meta['ua'] = ua
+        # 防止redirect、retry时，重复添加proxy
+        if 'proxy' in request.meta and request.meta['proxy'] in self.proxies:
+            self.proxies.remove(request.meta['proxy'])        
+
+        proxy = 'https://125.70.13.77:8080'
+        # 设置proxy
+        # request.meta['proxy'] = proxy
+        self.proxies.append(proxy)
+
         request.meta['cookies_counter'] = counter
-        request.meta['cookiejar'] = cookies_id
+        request.meta['cookies_id'] = cookies_id
 
     def process_response(self, request, response, spider):
-        proxy_id = request.meta['proxy_id']
-        cookies_id = request.meta['cookiejar']        
-        cookies_counter = request.meta['cookies_counter']
-        
-        # 获取Response中返回的cookies
-        logger.debug('0 After response cookies: %s' % request.cookies)
-
-        cookies = request.cookies
-
-        cookies_counter += 1
-
-        url = response.url
-        logger.debug(response.url)
-        query = urllib.parse.urlsplit(response.url).query
-        
-
-        try:
-            response_dict = json.loads(response.text)
-
-            # response_dict = {'data': 0}
-
-            data_security = response_dict['result']['data_security_filt_res']
-            logger.debug('data_security: %s' % data_security)
-
-            if data_security > 0:
-                # 当data_security > 0时，说明百度对结果进行了筛选，不是完整的结果，
-                # 该代理可能已经被检测到，冻结该代理，并将当前请求重新加入任务队列
-
-                # 记录发生异常的请求信息                
-                self.update_cookies(cookies_id, cookies, cookies_counter, 
-                    query, data_security)
-                logger.debug('cookies_id: %s\t cookies:%s\t cookies_counter:%s' % 
-                    (cookies_id, cookies, cookies_counter))
-
-                # 冻结代理
-                self.block_proxy(proxy_id, data_security)
-
-                # 设置响应码为601，进行Retry
-                response.status = 601
-                return response
-
-            else:
-                # 更新cookies信息
-                self.update_cookies(cookies_id, cookies, cookies_counter, query, data_security)
-                return response
-
-        except Exception as e:
-            logger.error('proxies: %s\nua: %s\ncookies: %s\nquery: %s\n' % 
-                (request.meta['proxies'], request.meta['ua'], cookies, query), 
-                exc_info=True)
-            # 设置响应码为602，进行Retry
-            response.status = 602
-            return response
+        return response
 
     def process_exception(self, request, exception, spider):
         # Called when a download handler or a process_request()
@@ -240,6 +193,10 @@ class RandomProxyUACookiesMiddleware(object):
         # - return None: continue processing this exception
         # - return a Response object: stops process_exception() chain
         # - return a Request object: stops process_exception() chain
+
+        # 从集合中移除proxy
+        if 'proxy' in request.meta and request.meta['proxy'] in self.proxies:
+            self.proxies.remove(request.meta['proxy'])        
         pass
     @classmethod
     def from_crawler(cls, crawler):
@@ -258,22 +215,27 @@ class RandomProxyUACookiesMiddleware(object):
         max_cookies_counter = settings['MAX_COOKIES_COUNTER']
 
         cnxpool = mysql.connector.pooling.MySQLConnectionPool(pool_name = "pucpool",
-                                                      pool_size = 3, **dbconfig)
-        return cls(crawler, cnxpool, max_cookies_counter)
+                                                      pool_size = 32, **dbconfig)
 
-    def _cookies_to_list(self, cookies):
-        cookies_list = list()
-        for cookie in cookies:
-            cookie_dict = dict()
-            for name in ("version", "name", "value",
-                         "port", "port_specified",
-                         "domain", "domain_specified", "domain_initial_dot",
-                         "path", "path_specified",
-                         "secure", "expires", "discard", "comment", "comment_url",
-                         ):
-                attr = getattr(cookie, name, None)
-                if attr:
-                    cookie_dict[name] = attr
-            cookies_list.append(cookie_dict)
-        return cookies_list if len(cookies_list) > 0 else None
+        proxy_url = settings['PROXY_URL']
+
+        proxies = settings['PROXIES']
+        web = settings['WEB']
+        return cls(crawler, cnxpool, max_cookies_counter, proxy_url, proxies, web)
+
+    def _transform_cookies(self, cookies_str):
+        """
+        将request.headers中的cookies转换成json
+        :params cookies_str: str
+        :return json
+        """
+        cookies = cookies_str.split(';')
+        cookies_json = {}
+        if cookies:            
+            for c in cookies:
+                c = c.strip()
+                name, val = c.split('=', 1)
+                cookies_json[name] = val
+        return cookies_json
+
 

@@ -26,30 +26,41 @@ class BdpoiSpider(scrapy.Spider):
         },
 
         'DOWNLOADER_MIDDLEWARES': {
-            'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
-            'scrapy.downloadermiddlewares.cookies.CookiesMiddleware': None,
-            'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': None,
-            'poiscrawler.myMiddlewares.proxy_ua_cookies.RandomProxyUACookiesMiddleware': 543
+            # 'scrapy.downloadermiddlewares.useragent.UserAgentMiddleware': None,
+            # 'scrapy.downloadermiddlewares.cookies.CookiesMiddleware': None,
+            # 'scrapy.downloadermiddlewares.httpproxy.HttpProxyMiddleware': None,
+            'poiscrawler.myMiddlewares.proxy_ua_cookies.RandomProxyUACookiesMiddleware': 443,
+            'poiscrawler.myMiddlewares.validate_response.ValidateResponseMiddleware': 553
         },
 
         'ITEM_PIPELINES': {
-           'poiscrawler.pipelines.InsertManyItemPipeline': 300
+           # 'poiscrawler.pipelines.InsertManyItemPipeline': 300
         },
 
         'DOWNLOAD_DELAY': 10,
         'CONCURRENT_REQUESTS': 1,
-        'DOWNLOAD_TIMEOUT': 10,
+        'DOWNLOAD_TIMEOUT': 30,
+
+        'COOKIES_ENABLED': True,
+        #'COOKIES_DEBUG': True,
 
         # Retry
         'RETRY_ENABLED': True,
-        'RETRY_TIMES': 10,
+        'RETRY_TIMES': 1,
         'RETRY_HTTP_CODES': [400, 404, 502, 504, 601, 602],
 
         # MySQL
         'MYSQL_ITEM_LIST_LIMIT': 50,
 
         'SUBBINS': 5,
-        'SUBBIN_PADDING': 1
+        'SUBBIN_PADDING': 1,
+
+        #'LOG_LEVEL': 'INFO',
+        #'LOG_FILE': './bdpoi.log',
+
+        'PROXIES': [],
+
+        'WEB': 'baidu_map'
     }
 
     params = {
@@ -98,20 +109,23 @@ class BdpoiSpider(scrapy.Spider):
     }
 
     def start_requests(self):        
+        
+        # url = self._construct_url('美食', '(12575076.8056,2564378.2789;12697994.1393,2728618.8495)', 0)
+        # yield scrapy.Request(url=url, method='GET')
         # 设置请求参数
         keys = list()
-        with open('./data/baidu_keywords') as f:
-            key = f.readline().replace('\n', '')
-            if key:
-                keys.append(key)
+        with open('./poiscrawler/data/baidu_keywords', 'r', encoding='utf8') as f:
+            lines = f.readlines()
+            for l in lines:
+                key = l.replace('\n', '')
+                if key:
+                    keys.append(key)
         for key in keys:
             url = self._construct_url(key, '(12575076.8056,2564378.2789;12697994.1393,2728618.8495)', 0)
             yield scrapy.Request(url=url, method='GET')
 
     def parse(self, response):
-
         # self.logger.debug(response.text)
-
         response_dict = json.loads(response.text)
         ts = int(time.time())
 
@@ -136,7 +150,7 @@ class BdpoiSpider(scrapy.Spider):
 
                 # 本次请求返回的数据是最后一页数据，直接将该POI数据返回
                 if remain_poi_num > 0 and remain_poi_num <= 50:  
-                    logger.info('返回最后一页的POI数据, wd:%s, bound:%s, nn:%s, total:%s' % (
+                    self.logger.info('返回最后一页的POI数据, wd:%s, bound:%s, nn:%s, total:%s' % (
                         query['wd'], query['b'], query['nn'], poi_total))
                     for poi in response_dict['content']:
                         yield self.parse_poi(poi, ts)
