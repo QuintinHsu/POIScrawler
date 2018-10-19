@@ -58,6 +58,7 @@ class GdpoiSpider(scrapy.Spider):
         #'LOG_LEVEL': 'INFO',
         #'LOG_FILE': './gdpoi.log',
 
+        # 正在使用的proxy
         'PROXIES': [],
 
         'WEB': 'gaode_map'

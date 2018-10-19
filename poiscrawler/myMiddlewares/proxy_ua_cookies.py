@@ -36,16 +36,16 @@ class RandomProxyUACookiesMiddleware(object):
         proxy = None
         url = self.proxy_url
         try:
-            proxy = 'https://113.128.148.119:8118'
-            # response = requests.get(url=url)
-            # if response and response.status_code == 200:
-            #     re = json.loads(response.text)
-            #     if 'error' in re and re['error'] == 0:
-            #         proxy = '%s://%s:%s' % (schema, re['data']['host'], re['data']['port'])
+            response = requests.get(url=url)
+            if response and response.status_code == 200:
+                re = json.loads(response.text)
+                if 'error' in re and re['error'] == 0:
+                    proxy = '%s://%s:%s' % (schema, re['data']['host'], re['data']['port'])
 
         except Exception as e:
             proxy = None
 
+        logger.info('Proxy: %s' % proxy)
         return proxy
 
     def get_random_proxy(self):
@@ -174,9 +174,8 @@ class RandomProxyUACookiesMiddleware(object):
         if 'proxy' in request.meta and request.meta['proxy'] in self.proxies:
             self.proxies.remove(request.meta['proxy'])        
 
-        proxy = 'https://125.70.13.77:8080'
         # 设置proxy
-        # request.meta['proxy'] = proxy
+        request.meta['proxy'] = proxy
         self.proxies.append(proxy)
 
         request.meta['cookies_counter'] = counter
@@ -198,6 +197,7 @@ class RandomProxyUACookiesMiddleware(object):
         if 'proxy' in request.meta and request.meta['proxy'] in self.proxies:
             self.proxies.remove(request.meta['proxy'])        
         pass
+
     @classmethod
     def from_crawler(cls, crawler):
         settings = crawler.settings

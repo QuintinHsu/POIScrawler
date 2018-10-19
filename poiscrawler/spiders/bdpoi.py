@@ -58,6 +58,7 @@ class BdpoiSpider(scrapy.Spider):
         #'LOG_LEVEL': 'INFO',
         #'LOG_FILE': './bdpoi.log',
 
+        # 正在使用的proxy
         'PROXIES': [],
 
         'WEB': 'baidu_map'
